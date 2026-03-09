@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Count, Q
 
 from .models import News, Category, Tag, Comment, Like
 from .serializers import (
@@ -35,7 +36,7 @@ class NewsCreateView(generics.CreateAPIView):
 
 
 class NewsDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = News.objects.all()
+    queryset = News.objects.select_related('author', 'category').prefetch_related('tags')
     lookup_field = 'slug'
     permission_classes = [IsEditorOrReadOnly]
 
@@ -68,7 +69,7 @@ class FeaturedNewsView(generics.ListAPIView):
     def get_queryset(self):
         return News.objects.filter(
             status=News.Status.PUBLISHED, is_featured=True
-        ).select_related('author', 'category')[:10]
+        ).select_related('author', 'category').prefetch_related('tags')[:10]
 
 
 class BreakingNewsView(generics.ListAPIView):
@@ -78,11 +79,13 @@ class BreakingNewsView(generics.ListAPIView):
     def get_queryset(self):
         return News.objects.filter(
             status=News.Status.PUBLISHED, is_breaking=True
-        ).order_by('-published_at')[:5]
+        ).select_related('author', 'category').prefetch_related('tags').order_by('-published_at')[:5]
 
 
 class CategoryListView(generics.ListCreateAPIView):
-    queryset = Category.objects.filter(is_active=True)
+    queryset = Category.objects.filter(is_active=True).annotate(
+        news_count_annotated=Count('news', filter=Q(news__status=News.Status.PUBLISHED))
+    )
     serializer_class = CategorySerializer
     permission_classes = [IsEditorOrReadOnly]
 
@@ -133,4 +136,4 @@ class MyNewsView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return News.objects.filter(author=self.request.user).order_by('-created_at')
+        return News.objects.filter(author=self.request.user).select_related('author', 'category').prefetch_related('tags').order_by('-created_at')

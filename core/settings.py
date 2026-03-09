@@ -20,7 +20,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-default-key-change-this')
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,neoncheck.pythonanywhere.com').split(',')
 
 # Application definition
 
@@ -161,10 +161,12 @@ SIMPLE_JWT = {
 }
 
 # CORS sozlamalari
+CORS_ALLOW_ALL_ORIGINS = True  # Production va Mobilda barcha domenlarga ruxsat (yoki aniq ulanishlarni yozing)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:8000",
+    "https://neoncheck.pythonanywhere.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
 

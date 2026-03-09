@@ -11,6 +11,8 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug', 'description', 'icon', 'is_active', 'news_count']
 
     def get_news_count(self, obj):
+        if hasattr(obj, 'news_count_annotated'):
+            return obj.news_count_annotated
         return obj.news.filter(status=News.Status.PUBLISHED).count()
 
 
