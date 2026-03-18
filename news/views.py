@@ -105,9 +105,15 @@ class TagListView(generics.ListCreateAPIView):
     search_fields = ['name']
 
 
-class CommentCreateView(generics.CreateAPIView):
+class CommentCreateView(generics.ListCreateAPIView):
     serializer_class = CommentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        return Comment.objects.filter(
+            news__slug=self.kwargs['slug'], 
+            is_approved=True
+        ).select_related('author').order_by('-created_at')
 
     def perform_create(self, serializer):
         news = get_object_or_404(News, slug=self.kwargs['slug'])
