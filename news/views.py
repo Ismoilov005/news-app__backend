@@ -52,14 +52,22 @@ class NewsDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Response(serializer.data)
 
     def _increment_views_once(self, request, news):
-        """Bir session/IP dan kuniga 1 marta ko'rishni hisoblash"""
-        session_key = f"viewed_news_{news.pk}"
-        
-        # Session asosida tekshirish
-        if not request.session.get(session_key):
+        from django.core.cache import cache
+
+        # Get Client IP
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+
+        identifier = f"user_{request.user.id}" if request.user.is_authenticated else f"ip_{ip}"
+        cache_key = f"viewed_news_{news.pk}_{identifier}"
+
+        # cache.add returns True ONLY if the key was not already present.
+        # This prevents race conditions from simultaneous requests (e.g. React.StrictMode)
+        if cache.add(cache_key, True, timeout=86400):
             news.increment_views()
-            request.session[session_key] = True
-            request.session.set_expiry(86400)  # 24 soat
 
 
 class FeaturedNewsView(generics.ListAPIView):
@@ -126,15 +134,19 @@ class LikeToggleView(APIView):
 
     def post(self, request, slug):
         news = get_object_or_404(News, slug=slug, status=News.Status.PUBLISHED)
+        
+        # Safely get or create to prevent DB IntegrityError during simultaneous clicks
         like, created = Like.objects.get_or_create(news=news, user=request.user)
 
         if not created:
             like.delete()
-            News.objects.filter(pk=news.pk).update(likes_count=news.likes.count() - 1)
-            return Response({"liked": False, "likes_count": news.likes.count() - 1})
+            count = news.likes.count()
+            News.objects.filter(pk=news.pk).update(likes_count=count)
+            return Response({"liked": False, "likes_count": count})
 
-        News.objects.filter(pk=news.pk).update(likes_count=news.likes.count())
-        return Response({"liked": True, "likes_count": news.likes.count()}, status=status.HTTP_201_CREATED)
+        count = news.likes.count()
+        News.objects.filter(pk=news.pk).update(likes_count=count)
+        return Response({"liked": True, "likes_count": count}, status=status.HTTP_201_CREATED)
 
 
 class MyNewsView(generics.ListAPIView):
