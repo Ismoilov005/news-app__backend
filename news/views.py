@@ -47,43 +47,48 @@ class NewsDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        self._increment_views_once(request, instance)  # ← o'zgartirildi
+        self._increment_views_once(request, instance)
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
     def _increment_views_once(self, request, news):
+        """
+        Bir foydalanuvchi / IP 24 soat ichida faqat 1 marta view hisoblanadi.
+        select_for_update() bilan race condition oldini oladi.
+        """
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0].strip()
-        else:
-            ip = request.META.get('REMOTE_ADDR')
+        ip = x_forwarded_for.split(',')[0].strip() if x_forwarded_for else request.META.get('REMOTE_ADDR')
 
-        from django.utils import timezone
         from datetime import timedelta
         from django.db import transaction
         from .models import NewsViewLog
 
         time_threshold = timezone.now() - timedelta(hours=24)
-        
+
         with transaction.atomic():
             if request.user.is_authenticated:
-                has_viewed = NewsViewLog.objects.select_for_update().filter(
-                    news=news, 
-                    user=request.user, 
+                # Autentifikatsiya qilingan foydalanuvchi uchun user bo'yicha tekshirish
+                already_viewed = NewsViewLog.objects.select_for_update().filter(
+                    news=news,
+                    user=request.user,
                     viewed_at__gte=time_threshold
                 ).exists()
-                if not has_viewed:
-                    NewsViewLog.objects.create(news=news, user=request.user, ip_address=ip)
-                    news.increment_views()
             else:
-                has_viewed = NewsViewLog.objects.select_for_update().filter(
-                    news=news, 
-                    ip_address=ip, 
+                # Anonim foydalanuvchi uchun IP bo'yicha tekshirish
+                already_viewed = NewsViewLog.objects.select_for_update().filter(
+                    news=news,
+                    user__isnull=True,
+                    ip_address=ip,
                     viewed_at__gte=time_threshold
                 ).exists()
-                if not has_viewed:
-                    NewsViewLog.objects.create(news=news, ip_address=ip)
-                    news.increment_views()
+
+            if not already_viewed:
+                NewsViewLog.objects.create(
+                    news=news,
+                    user=request.user if request.user.is_authenticated else None,
+                    ip_address=ip
+                )
+                news.increment_views()
 
 
 class FeaturedNewsView(generics.ListAPIView):
@@ -135,14 +140,16 @@ class CommentCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return Comment.objects.filter(
-            news__slug=self.kwargs['slug'], 
+            news__slug=self.kwargs['slug'],
             is_approved=True
         ).select_related('author').order_by('-created_at')
 
     def perform_create(self, serializer):
         news = get_object_or_404(News, slug=self.kwargs['slug'])
-        comment = serializer.save(author=self.request.user, news=news)
-        News.objects.filter(pk=news.pk).update(comments_count=News.objects.get(pk=news.pk).comments.filter(is_approved=True).count())
+        serializer.save(author=self.request.user, news=news)
+        News.objects.filter(pk=news.pk).update(
+            comments_count=News.objects.get(pk=news.pk).comments.filter(is_approved=True).count()
+        )
 
 
 class LikeToggleView(APIView):
@@ -150,22 +157,33 @@ class LikeToggleView(APIView):
 
     def post(self, request, slug):
         from django.db import transaction
-        
+
         with transaction.atomic():
-            news = get_object_or_404(News.objects.select_for_update(), slug=slug, status=News.Status.PUBLISHED)
-            
-            # Safely get or create to prevent DB IntegrityError during simultaneous clicks
+            news = get_object_or_404(
+                News.objects.select_for_update(),
+                slug=slug,
+                status=News.Status.PUBLISHED
+            )
+
             like, created = Like.objects.get_or_create(news=news, user=request.user)
 
             if not created:
+                # Like mavjud edi → o'chirish (unlike)
                 like.delete()
                 count = news.likes.count()
                 News.objects.filter(pk=news.pk).update(likes_count=count)
-                return Response({"liked": False, "likes_count": count})
+                return Response({
+                    "is_liked": False,      # ← frontend "is_liked" kutadi
+                    "likes_count": count
+                })
 
+            # Yangi like qo'shildi
             count = news.likes.count()
             News.objects.filter(pk=news.pk).update(likes_count=count)
-            return Response({"liked": True, "likes_count": count}, status=status.HTTP_201_CREATED)
+            return Response({
+                "is_liked": True,           # ← frontend "is_liked" kutadi
+                "likes_count": count
+            }, status=status.HTTP_201_CREATED)
 
 
 class MyNewsView(generics.ListAPIView):
@@ -173,4 +191,6 @@ class MyNewsView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return News.objects.filter(author=self.request.user).select_related('author', 'category').prefetch_related('tags').order_by('-created_at')
+        return News.objects.filter(
+            author=self.request.user
+        ).select_related('author', 'category').prefetch_related('tags').order_by('-created_at')
