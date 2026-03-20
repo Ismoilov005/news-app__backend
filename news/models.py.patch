@@ -1,0 +1,18 @@
+--- /home/algoarchitect/AlgoArchitect/ki-at-masofaviy-loyihalar/Abdazov-I-G/backend/news/models.py
++++ /home/algoarchitect/AlgoArchitect/ki-at-masofaviy-loyihalar/Abdazov-I-G/backend/news/models.py
+@@ -144,3 +144,14 @@
+         unique_together = ['news', 'user']
+         verbose_name = 'Like'
+         verbose_name_plural = 'Likelar'
++
++class NewsViewLog(models.Model):
++    news = models.ForeignKey(News, on_delete=models.CASCADE, related_name='view_logs')
++    ip_address = models.GenericIPAddressField(null=True, blank=True)
++    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True, blank=True)
++    viewed_at = models.DateTimeField(auto_now_add=True)
++
++    class Meta:
++        indexes = [
++            models.Index(fields=['news', 'ip_address', 'viewed_at']),
++            models.Index(fields=['news', 'user', 'viewed_at']),
++        ]
