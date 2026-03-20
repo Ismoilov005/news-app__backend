@@ -75,8 +75,6 @@ class News(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.NORMAL)
 
-    views_count = models.PositiveIntegerField(default=0)
-    likes_count = models.PositiveIntegerField(default=0)
     comments_count = models.PositiveIntegerField(default=0)
 
     source = models.CharField(max_length=200, blank=True, help_text="Manba nomi")
@@ -113,37 +111,6 @@ class News(models.Model):
     def __str__(self):
         return self.title
 
-    def increment_views(self):
-        News.objects.filter(pk=self.pk).update(views_count=models.F('views_count') + 1)
-
-
-class NewsViewLog(models.Model):
-    """
-    Har bir foydalanuvchi / IP ko'rishini log qiladi.
-    24 soat ichida takroriy ko'rishlar hisoblanmaydi.
-    """
-    news = models.ForeignKey(News, on_delete=models.CASCADE, related_name='view_logs')
-    user = models.ForeignKey(
-        CustomUser, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='view_logs'
-    )
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    viewed_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "Ko'rish logi"
-        verbose_name_plural = "Ko'rish loglari"
-        indexes = [
-            # Autentifikatsiya qilingan foydalanuvchi uchun tezkor qidiruv
-            models.Index(fields=['news', 'user', 'viewed_at']),
-            # Anonim foydalanuvchi uchun tezkor qidiruv
-            models.Index(fields=['news', 'ip_address', 'viewed_at']),
-        ]
-
-    def __str__(self):
-        identifier = self.user.username if self.user else self.ip_address
-        return f"{self.news.title[:40]} — {identifier}"
-
 
 class Comment(models.Model):
     news = models.ForeignKey(News, on_delete=models.CASCADE, related_name='comments')
@@ -161,14 +128,3 @@ class Comment(models.Model):
 
     def __str__(self):
         return f"{self.author.get_full_name()} - {self.news.title[:50]}"
-
-
-class Like(models.Model):
-    news = models.ForeignKey(News, on_delete=models.CASCADE, related_name='likes')
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='likes')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ['news', 'user']
-        verbose_name = 'Like'
-        verbose_name_plural = 'Likelar'

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import News, Category, Tag, Comment, Like
+from .models import News, Category, Tag, Comment
 from users.serializers import UserSerializer
 
 
@@ -47,8 +47,8 @@ class NewsListSerializer(serializers.ModelSerializer):
         model = News
         fields = [
             'id', 'title', 'slug', 'summary', 'image', 'author',
-            'category', 'tags', 'status', 'priority', 'views_count',
-            'likes_count', 'comments_count', 'is_featured', 'is_breaking',
+            'category', 'tags', 'status', 'priority',
+            'comments_count', 'is_featured', 'is_breaking',
             'published_at', 'created_at'
         ]
 
@@ -59,7 +59,6 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     comments = serializers.SerializerMethodField()
-    is_liked = serializers.SerializerMethodField()
 
     class Meta:
         model = News
@@ -68,12 +67,6 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     def get_comments(self, obj):
         top_level = obj.comments.filter(parent=None, is_approved=True)
         return CommentSerializer(top_level, many=True).data
-
-    def get_is_liked(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.likes.filter(user=request.user).exists()
-        return False
 
 
 class NewsWriteSerializer(serializers.ModelSerializer):
@@ -84,7 +77,7 @@ class NewsWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = News
-        exclude = ['views_count', 'likes_count', 'comments_count', 'author']
+        exclude = ['comments_count', 'author']
 
     def create(self, validated_data):
         validated_data['author'] = self.context['request'].user

@@ -4,7 +4,7 @@ from .views import (
     FeaturedNewsView, BreakingNewsView,
     CategoryListView, CategoryDetailView,
     TagListView,
-    CommentCreateView, LikeToggleView,
+    CommentCreateView,
     MyNewsView,
 )
 
@@ -25,6 +25,5 @@ urlpatterns = [
 
     # ── Slug bilan (ENG OXIRIDA bo'lishi SHART) ───────────
     path('<slug:slug>/', NewsDetailView.as_view(), name='news-detail'),
-    path('<slug:slug>/like/', LikeToggleView.as_view(), name='news-like'),
     path('<slug:slug>/comments/', CommentCreateView.as_view(), name='news-comment'),
 ]

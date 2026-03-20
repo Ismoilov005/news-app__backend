@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db.models import Count, Q
 
-from .models import News, Category, Tag, Comment, Like
+from .models import News, Category, Tag, Comment
 from .serializers import (
     NewsListSerializer, NewsDetailSerializer, NewsWriteSerializer,
     CategorySerializer, TagSerializer, CommentSerializer
@@ -21,7 +21,7 @@ class NewsListView(generics.ListAPIView):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['category__slug', 'status', 'priority', 'is_featured', 'is_breaking']
     search_fields = ['title', 'summary', 'content', 'author__first_name']
-    ordering_fields = ['published_at', 'views_count', 'likes_count', 'created_at']
+    ordering_fields = ['published_at', 'created_at']
     ordering = ['-published_at']
 
     def get_queryset(self):
@@ -47,48 +47,8 @@ class NewsDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        self._increment_views_once(request, instance)
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
-
-    def _increment_views_once(self, request, news):
-        """
-        Bir foydalanuvchi / IP 24 soat ichida faqat 1 marta view hisoblanadi.
-        select_for_update() bilan race condition oldini oladi.
-        """
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        ip = x_forwarded_for.split(',')[0].strip() if x_forwarded_for else request.META.get('REMOTE_ADDR')
-
-        from datetime import timedelta
-        from django.db import transaction
-        from .models import NewsViewLog
-
-        time_threshold = timezone.now() - timedelta(hours=24)
-
-        with transaction.atomic():
-            if request.user.is_authenticated:
-                # Autentifikatsiya qilingan foydalanuvchi uchun user bo'yicha tekshirish
-                already_viewed = NewsViewLog.objects.select_for_update().filter(
-                    news=news,
-                    user=request.user,
-                    viewed_at__gte=time_threshold
-                ).exists()
-            else:
-                # Anonim foydalanuvchi uchun IP bo'yicha tekshirish
-                already_viewed = NewsViewLog.objects.select_for_update().filter(
-                    news=news,
-                    user__isnull=True,
-                    ip_address=ip,
-                    viewed_at__gte=time_threshold
-                ).exists()
-
-            if not already_viewed:
-                NewsViewLog.objects.create(
-                    news=news,
-                    user=request.user if request.user.is_authenticated else None,
-                    ip_address=ip
-                )
-                news.increment_views()
 
 
 class FeaturedNewsView(generics.ListAPIView):
@@ -150,40 +110,6 @@ class CommentCreateView(generics.ListCreateAPIView):
         News.objects.filter(pk=news.pk).update(
             comments_count=News.objects.get(pk=news.pk).comments.filter(is_approved=True).count()
         )
-
-
-class LikeToggleView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request, slug):
-        from django.db import transaction
-
-        with transaction.atomic():
-            news = get_object_or_404(
-                News.objects.select_for_update(),
-                slug=slug,
-                status=News.Status.PUBLISHED
-            )
-
-            like, created = Like.objects.get_or_create(news=news, user=request.user)
-
-            if not created:
-                # Like mavjud edi → o'chirish (unlike)
-                like.delete()
-                count = news.likes.count()
-                News.objects.filter(pk=news.pk).update(likes_count=count)
-                return Response({
-                    "is_liked": False,      # ← frontend "is_liked" kutadi
-                    "likes_count": count
-                })
-
-            # Yangi like qo'shildi
-            count = news.likes.count()
-            News.objects.filter(pk=news.pk).update(likes_count=count)
-            return Response({
-                "is_liked": True,           # ← frontend "is_liked" kutadi
-                "likes_count": count
-            }, status=status.HTTP_201_CREATED)
 
 
 class MyNewsView(generics.ListAPIView):

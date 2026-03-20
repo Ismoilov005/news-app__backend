@@ -1,12 +1,12 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import News, Category, Tag, Comment, Like
+from .models import News, Category, Tag, Comment
 
 
 @admin.register(News)
 class NewsAdmin(admin.ModelAdmin):
     list_display = ['title', 'author', 'category', 'status', 'priority',
-                    'views_count', 'likes_count', 'is_featured', 'published_at']
+                    'is_featured', 'published_at']
     list_filter = ['status', 'priority', 'category', 'is_featured', 'is_breaking']
     search_fields = ['title', 'summary', 'author__email']
     prepopulated_fields = {'slug': ('title',)}
